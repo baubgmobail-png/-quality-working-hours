@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b4da2" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Quality Hours" />
+  <title>Quality Working Hours</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-mini">
+        <img src="assets/icon-192.png" alt="Quality Working Hours" />
+        <div><strong>Quality Working Hours</strong><span>Smart Shift Planner</span></div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="installBtn" title="تثبيت التطبيق">＋</button>
+        <button class="icon-btn" id="saveBtn" title="حفظ">✓</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="homeView" class="view active">
+        <div class="hero-card">
+          <img src="assets/cover.jpeg" alt="Quality Working Hours" />
+          <div class="hero-overlay">
+            <div>
+              <span class="eyebrow">جدولة ذكية</span>
+              <h1>شفتات A / B بدون تعارضات</h1>
+              <p>يراقب التغطية، اليوم السادس، ويمنع اليوم السابع.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card"><span>الشهر</span><strong id="sumMonth">—</strong></div>
+          <div class="summary-card"><span>مشاكل حرجة</span><strong id="sumCritical">0</strong></div>
+          <div class="summary-card"><span>تنبيهات يوم سادس</span><strong id="sumSixth">0</strong></div>
+          <div class="summary-card"><span>حالة التغطية</span><strong id="sumCoverage">ممتازة</strong></div>
+        </div>
+
+        <div class="section-head">
+          <div><h2>الجدول الأسبوعي</h2><p>اضغط على أي خانة لتعديل الشفت أو العطلة.</p></div>
+          <div class="month-nav">
+            <button id="prevMonth">‹</button><button id="monthLabel" class="month-label">—</button><button id="nextMonth">›</button>
+          </div>
+        </div>
+
+        <div id="weekTabs" class="week-tabs"></div>
+        <div id="scheduleWrap" class="schedule-wrap"></div>
+
+        <div class="section-head compact">
+          <div><h2>مركز الحلول</h2><p>كل التعارضات مع حلول قابلة للتطبيق.</p></div>
+          <button id="autoSolveBtn" class="primary-btn">حل تلقائي آمن</button>
+        </div>
+        <div id="issuesList" class="issues-list"></div>
+      </section>
+
+      <section id="teamView" class="view">
+        <div class="page-title"><h1>الفريق وإعدادات الشفت</h1><p>عرّف الأربعة أشخاص وطريقة دوام كل شخص.</p></div>
+        <div id="teamCards" class="team-cards"></div>
+        <button id="regenerateBtn" class="primary-btn wide">إعادة إنشاء الجدول</button>
+      </section>
+
+      <section id="rulesView" class="view">
+        <div class="page-title"><h1>قوانين الجدولة</h1><p>الإعدادات الافتراضية مطابقة للنظام الذي شرحته.</p></div>
+        <div class="settings-card">
+          <label>الحد الأدنى لشفت A يومياً<input id="minA" type="number" min="1" max="4" /></label>
+          <label>الحد الأدنى لشفت B يومياً<input id="minB" type="number" min="1" max="4" /></label>
+          <label>أقصى أيام متتالية مسموحة<input id="maxConsecutive" type="number" min="5" max="6" /></label>
+          <label class="toggle-row"><span><b>اليوم السادس مسموح</b><small>يظهر كتنبيه وليس مخالفة.</small></span><input id="sixthAllowed" type="checkbox" /></label>
+          <label class="toggle-row"><span><b>اليوم السابع ممنوع قطعياً</b><small>يبقى تنبيه أحمر حتى يتم اختيار حل.</small></span><input id="seventhForbidden" type="checkbox" checked disabled /></label>
+          <label>بداية الأسبوع<select id="weekStart"><option value="0">الأحد</option><option value="6">السبت</option><option value="1">الاثنين</option></select></label>
+        </div>
+        <div class="settings-card">
+          <h3>البيانات</h3>
+          <div class="button-row"><button id="exportBtn" class="secondary-btn">تصدير نسخة احتياطية</button><label class="secondary-btn file-btn">استيراد<input id="importInput" type="file" accept="application/json" /></label><button id="resetBtn" class="danger-btn">إعادة ضبط</button></div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button data-view="homeView" class="active"><span>▦</span>الجدول</button>
+      <button data-view="teamView"><span>♟</span>الفريق</button>
+      <button data-view="rulesView"><span>⚙</span>القوانين</button>
+    </nav>
+
+    <footer>تم تطوير هذا البرنامج من قبل بلال الشمري</footer>
+  </div>
+
+  <div id="editModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><div><h3 id="editTitle">تعديل اليوم</h3><p id="editSubtitle"></p></div><button id="closeModal">×</button></div>
+      <div class="choice-grid">
+        <button data-assignment="A" class="shift-choice a">شفت A</button>
+        <button data-assignment="B" class="shift-choice b">شفت B</button>
+        <button data-assignment="OFF" class="shift-choice off">عطلة</button>
+      </div>
+      <label class="note-label">ملاحظة التعديل<input id="overrideNote" placeholder="مثلاً: فصل يوم سابع / تبديل تغطية" /></label>
+      <button id="clearOverride" class="secondary-btn wide">إلغاء التعديل والعودة للجدول الأساسي</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
