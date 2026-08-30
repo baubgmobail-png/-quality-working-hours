@@ -8,8 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Quality Hours">
 <title>Quality Working Hours</title>
-<link rel="manifest" href="./manifest.webmanifest?v=15">
-<link rel="apple-touch-icon" href="./icon-192.png?v=15">
+<link rel="manifest" href="./manifest.webmanifest?v=16">
+<link rel="apple-touch-icon" href="./icon-192.png?v=16">
 <style>
 :root{--navy:#093f91;--blue:#0a6fca;--cyan:#18a4d8;--ink:#16314f;--muted:#6e8499;--bg:#f3f8fc;--card:#fff;--line:#d8e4ef;--red:#c53349;--amber:#d78308;--green:#13865d;--shadow:0 7px 22px rgba(18,77,128,.10)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;min-height:100%;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,Arial,sans-serif;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
@@ -224,7 +224,7 @@ const defaultState={
   notes:{},
   sixthAccepted:{},
   monthPlans:[],
-  logicVersion:15
+  logicVersion:16
 };
 
 let state=loadState(),schedule=[],analysis=null,selectedCell=null,globalPlans=[];
@@ -287,15 +287,22 @@ function normalizeFromAugust(s){
 }
 
 
-function migrateToSmartRotation15(s){
+function migrateToStrictRotation16(s){
   const oldVersion=Number(s.logicVersion||0);
-  if(oldVersion<15){
-    // النسخ القديمة ممكن تكون خزنت تعديلات يومية فوق الحسبة الصح.
-    // نحافظ على الأسماء وإعدادات الشهور، ونبني الجدول اليومي من جديد مرة واحدة.
+  if(oldVersion<16){
+    // v16: الشفت لا يتغير أبداً بين يومي عمل متتاليين.
+    // أي شهر بعد 8 يكمل من آخر شفت فعلي، لذلك نلغي أوامر "ابدأ A/B" القديمة.
+    s.monthPlans=(s.monthPlans||[]).map(p=>({
+      ...p,
+      people:Object.fromEntries(Object.entries(p.people||{}).map(([id,c])=>[
+        id,{...c,startShift:p.month===APP_START_MONTH?(c.startShift||'AUTO'):'AUTO'}
+      ]))
+    }));
+    // التعديلات اليومية القديمة قد تكون صنعت A ثم B بدون OFF؛ نعيد بناء الجدول مرة واحدة.
     s.overrides={};
     s.notes={};
     s.sixthAccepted={};
-    s.logicVersion=15;
+    s.logicVersion=16;
   }
   return s;
 }
@@ -315,7 +322,7 @@ function loadState(){
     };
     merged.monthPlans=migrateRotationPlans({...merged,rotationPlans:raw.rotationPlans||[]});
     delete merged.rotationPlans;
-    return migrateToSmartRotation15(normalizeFromAugust(merged));
+    return migrateToStrictRotation16(normalizeFromAugust(merged));
   }catch{return clone(defaultState)}
 }
 
@@ -371,16 +378,17 @@ function configForDate(s,e,d){
 
 function oppositeShift(v){return v==='A'?'B':'A'}
 
+function initialShiftForEmployee(s,e){
+  const aug=(s.monthPlans||[]).find(p=>p.month===APP_START_MONTH)?.people?.[e.id];
+  if(aug?.mode==='FIXED_A')return 'A';
+  if(aug?.mode==='FIXED_B')return 'B';
+  if(aug && (aug.startShift==='A'||aug.startShift==='B'))return aug.startShift;
+  return (e.startShift==='B')?'B':'A';
+}
+
 function buildScheduleRange(s,start,end){
-  const plans=sortedMonthPlans(s);
-  let warmStart;
-  if(plans.length){
-    warmStart=monthStart(plans[0].month);
-    warmStart.setDate(warmStart.getDate()-70);
-  }else{
-    warmStart=new Date(APP_START_DATE);
-  }
-  if(warmStart<APP_START_DATE)warmStart=new Date(APP_START_DATE);
+  // دائماً نبدأ الحساب من 1/8 حتى لا يضيع تسلسل الشفت بين الشهور.
+  let warmStart=new Date(APP_START_DATE);
   if(start<warmStart)warmStart=new Date(start);
 
   const allDates=datesBetween(warmStart,end);
@@ -389,47 +397,47 @@ function buildScheduleRange(s,start,end){
   for(const e of s.employees){
     let lastWorkedShift=null;
     let offSinceLastWork=false;
-    let activeMonth='';
-    let forceFirstWork=null;
+    const initialShift=initialShiftForEmployee(s,e);
 
     for(const d of allDates){
-      const key=dateKey(d),mk=monthKey(d),cfg=configForDate(s,e,d);
-
-      if(mk!==activeMonth){
-        activeMonth=mk;
-        // بداية شهر أو أسبوع لا تغيّر الشفت.
-        // فقط إذا المستخدم اختار "ابدأ A" أو "ابدأ B" لهذا الشهر، نفرض أول يوم عمل.
-        forceFirstWork=(cfg.sourceMonth===mk && (cfg.startShift==='A'||cfg.startShift==='B'))
-          ? cfg.startShift
-          : null;
-      }
-
+      const key=dateKey(d),cfg=configForDate(s,e,d);
       const weeklyOff=(d.getDay()===cfg.off1 || d.getDay()===cfg.off2);
-      let calculated;
+      let calculated='OFF';
 
-      if(weeklyOff){
-        calculated='OFF';
-      }else if(cfg.mode==='FIXED_A'){
-        calculated='A';
-      }else if(cfg.mode==='FIXED_B'){
-        calculated='B';
-      }else{
-        // A/B:
-        // يظل نفس الشفت حتى OFF.
-        // بعد OFF واحد أو أكثر، أول يوم عمل ينقلب عن آخر شفت فعلي.
-        if(forceFirstWork){
-          calculated=forceFirstWork;
-          forceFirstWork=null;
-        }else if(lastWorkedShift===null){
-          calculated=e.startShift||'A';
-        }else if(offSinceLastWork){
-          calculated=oppositeShift(lastWorkedShift);
-        }else{
+      if(!weeklyOff){
+        let wanted;
+
+        if(cfg.mode==='FIXED_A') wanted='A';
+        else if(cfg.mode==='FIXED_B') wanted='B';
+        else if(lastWorkedShift===null) wanted=initialShift;
+        else if(offSinceLastWork) wanted=oppositeShift(lastWorkedShift);
+        else wanted=lastWorkedShift;
+
+        // قاعدة حديدية: لا A→B ولا B→A بدون OFF فعلي بينهما.
+        // حتى لو تغيّر نظام الشخص مع بداية شهر، ينتظر أول OFF ثم ينتقل للنظام الجديد.
+        if(lastWorkedShift!==null && wanted!==lastWorkedShift && !offSinceLastWork){
           calculated=lastWorkedShift;
+        }else{
+          calculated=wanted;
         }
       }
 
-      const final=s.overrides[`${e.id}|${key}`] ?? calculated;
+      const overrideKey=`${e.id}|${key}`;
+      const requested=s.overrides?.[overrideKey];
+      let final=calculated;
+
+      if(requested==='OFF'){
+        final='OFF';
+      }else if(requested==='A'||requested==='B'){
+        // العمل اليدوي مسموح، لكن تغيير الشفت نفسه يحتاج OFF سابق.
+        const canUseRequested=(
+          lastWorkedShift===null ||
+          requested===lastWorkedShift ||
+          offSinceLastWork
+        );
+        if(canUseRequested) final=requested;
+      }
+
       rows.get(key).assignments[e.id]=final;
 
       if(final==='OFF'){
@@ -437,7 +445,6 @@ function buildScheduleRange(s,start,end){
       }else{
         lastWorkedShift=final;
         offSinceLastWork=false;
-        if(cfg.mode!=='ROTATE')forceFirstWork=null;
       }
     }
   }
@@ -526,11 +533,28 @@ function rebuild(show=false){
   saveState(show);
 }
 
+function canAssignShiftOnDate(s,empId,d,target){
+  if(target==='OFF')return true;
+  const e=s.employees.find(x=>x.id===empId);
+  if(!e)return false;
+  const prev=new Date(d);prev.setDate(prev.getDate()-1);
+  if(prev<APP_START_DATE)return true;
+  const prevDay=buildScheduleRange(s,prev,prev)[0];
+  const prevVal=prevDay?.assignments?.[empId];
+  if(!prevVal||prevVal==='OFF')return true;
+  return prevVal===target;
+}
+
 function setOverride(empId,d,val,note='',doRebuild=true){
+  if((val==='A'||val==='B')&&!canAssignShiftOnDate(state,empId,d,val)){
+    toast('ممنوع قلب الشفت بدون OFF قبل هذا اليوم');
+    return false;
+  }
   const k=`${empId}|${dateKey(d)}`;
   state.overrides[k]=val;
   if(note)state.notes[k]=note;
   if(doRebuild)rebuild();
+  return true;
 }
 
 function applyActions(targetState,actions){
@@ -702,11 +726,10 @@ function renderRotationPeople(){
           <option value="FIXED_A" ${c.mode==='FIXED_A'?'selected':''}>ثابت صباحي A</option>
           <option value="FIXED_B" ${c.mode==='FIXED_B'?'selected':''}>ثابت B</option>
         </select></label>
-        <label class="startFull">بداية A/B لهذا الشهر<select class="rstart">
-          <option value="AUTO" ${(c.startShift||'AUTO')==='AUTO'?'selected':''}>تلقائي — يكمل طبيعي</option>
+        ${month===APP_START_MONTH?`<label class="startFull">بداية A/B في شهر 8<select class="rstart">
           <option value="A" ${c.startShift==='A'?'selected':''}>ابدأ A</option>
           <option value="B" ${c.startShift==='B'?'selected':''}>ابدأ B</option>
-        </select></label>
+        </select></label>`:`<div class="startFull rotHint"><b>الشفت:</b> تلقائي من الشهر السابق — لا ينقلب إلا بعد OFF.</div>`}
       </div>
     </div>`;
   }).join('');
@@ -722,7 +745,7 @@ function saveRotationPlan(){
       off1:+card.querySelector('.roff1').value,
       off2:+card.querySelector('.roff2').value,
       mode:card.querySelector('.rmode').value,
-      startShift:card.querySelector('.rstart').value
+      startShift:month===APP_START_MONTH?(card.querySelector('.rstart')?.value||'A'):'AUTO'
     };
   });
 
@@ -735,7 +758,7 @@ function saveRotationPlan(){
   state.notes=Object.fromEntries(Object.entries(state.notes||{}).filter(([k])=>!k.split('|').pop().startsWith(monthPrefix)));
   state.sixthAccepted=Object.fromEntries(Object.entries(state.sixthAccepted||{}).filter(([k])=>!k.split('|').pop().startsWith(monthPrefix)));
 
-  state.logicVersion=15;
+  state.logicVersion=16;
   rotationModal.classList.add('hidden');
   rebuild(true);
   toast(`تم حفظ إعداد ${Number(month.slice(5,7))}/${month.slice(0,4)}`);
@@ -806,9 +829,13 @@ function chooseCoverageAction(s,issue,strategy,lockedRest){
   const day=dayForState(s,issue.date),target=issue.missing,opp=target==='A'?'B':'A',cov=coverage(day);
   const safeSwitch=s.employees
     .filter(e=>day.assignments[e.id]===opp && configForDate(s,e,issue.date).mode==='ROTATE' && !lockedRest.has(`${e.id}|${dateKey(issue.date)}`))
-    .filter(()=>cov[opp]>1);
+    .filter(e=>cov[opp]>1 && canAssignShiftOnDate(s,e.id,issue.date,target));
 
-  const off=s.employees.filter(e=>day.assignments[e.id]==='OFF'&&!lockedRest.has(`${e.id}|${dateKey(issue.date)}`));
+  const off=s.employees.filter(e=>
+    day.assignments[e.id]==='OFF' &&
+    !lockedRest.has(`${e.id}|${dateKey(issue.date)}`) &&
+    canAssignShiftOnDate(s,e.id,issue.date,target)
+  );
   const offSorted=off.sort((a,b)=>a.name.localeCompare(b.name,'ar'));
 
   if(strategy==='keepShifts'&&offSorted.length)
@@ -1088,14 +1115,14 @@ importInput.onchange=async e=>{
       monthPlans:d.monthPlans||migrateRotationPlans(d)
     };
     delete state.rotationPlans;
-    state=migrateToSmartRotation15(normalizeFromAugust(state));
+    state=migrateToStrictRotation16(normalizeFromAugust(state));
     rebuild(true);
   }catch{toast('ملف النسخة غير صالح')}
 };
 
 resetBtn.onclick=()=>{
   if(confirm('متأكد من حذف كل البيانات؟')){
-    state=migrateToSmartRotation15(normalizeFromAugust(clone(defaultState)));
+    state=migrateToStrictRotation16(normalizeFromAugust(clone(defaultState)));
     localStorage.removeItem(STORAGE_KEY);
     rebuild(true);
   }
