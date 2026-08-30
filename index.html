@@ -8,8 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Quality Hours">
 <title>Quality Working Hours</title>
-<link rel="manifest" href="./manifest.webmanifest?v=10">
-<link rel="apple-touch-icon" href="./icon-192.png?v=10">
+<link rel="manifest" href="./manifest.webmanifest?v=11">
+<link rel="apple-touch-icon" href="./icon-192.png?v=11">
 <style>
 :root{--navy:#093f91;--blue:#0a6fca;--cyan:#18a4d8;--ink:#16314f;--muted:#6e8499;--bg:#f3f8fc;--card:#fff;--line:#d8e4ef;--red:#c53349;--amber:#d78308;--green:#13865d;--shadow:0 7px 22px rgba(18,77,128,.10)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;min-height:100%;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,Arial,sans-serif;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
@@ -103,8 +103,7 @@ footer{text-align:center;color:#8294a6;font-size:10px;padding:18px 4px 3px}
       <div class="page-title"><h2>القوانين</h2><p>تعديل حدود التغطية ونسخة احتياطية للبيانات.</p></div>
       <div class="settings">
         <div class="settingcard">
-          <div class="settingrow"><div><b>الحد الأدنى لشفت A</b><small>لازم يكون موجود على الأقل هذا العدد يومياً.</small></div><input id="minA" type="number" min="1" max="4"></div>
-          <div class="settingrow"><div><b>الحد الأدنى لشفت B</b><small>لازم يكون موجود على الأقل هذا العدد يومياً.</small></div><input id="minB" type="number" min="1" max="4"></div>
+          <div class="settingrow"><div><b>قاعدة التغطية</b><small>اليوم سليم طالما يوجد شخص واحد على الأقل في A وشخص واحد على الأقل في B.</small></div><div class="pill green">A ≥ 1 و B ≥ 1</div></div>
         </div>
         <div class="settingcard">
           <div class="notice">اليوم السادس مسموح إذا اخترته، لكن اليوم السابع ممنوع ولازم ينحل. التطبيق يقترح حلول، وأنت تختار الأنسب قبل التطبيق.</div>
@@ -193,7 +192,7 @@ function loadState(){
     const merged={
       ...clone(defaultState),
       ...raw,
-      rules:{...defaultState.rules,...(raw.rules||{})},
+      rules:{minA:1,minB:1},
       overrides:raw.overrides||{},
       notes:raw.notes||{},
       sixthAccepted:raw.sixthAccepted||{},
@@ -354,13 +353,13 @@ function analyzeSchedule(sch,s=state,issueStart=null,issueEnd=null){
     const key=dateKey(day.date),cov=coverage(day);
     const add=it=>{if(!inWindow(day.date))return;issues.push(it);(byDay[key]??=[]).push(it)};
 
-    if(cov.A<s.rules.minA){
+    if(cov.A<1){
       if(inWindow(day.date)){critical++;coverageBad++}
-      add({type:'coverage',level:'critical',date:day.date,missing:'A',title:'شفت A غير مغطى',desc:`الموجود A=${cov.A} والمطلوب ${s.rules.minA}.`});
+      add({type:'coverage',level:'critical',date:day.date,missing:'A',title:'شفت A غير مغطى',desc:`لا يوجد أي شخص على شفت A في هذا اليوم.`});
     }
-    if(cov.B<s.rules.minB){
+    if(cov.B<1){
       if(inWindow(day.date)){critical++;coverageBad++}
-      add({type:'coverage',level:'critical',date:day.date,missing:'B',title:'شفت B غير مغطى',desc:`الموجود B=${cov.B} والمطلوب ${s.rules.minB}.`});
+      add({type:'coverage',level:'critical',date:day.date,missing:'B',title:'شفت B غير مغطى',desc:`لا يوجد أي شخص على شفت B في هذا اليوم.`});
     }
 
     for(const e of s.employees){
@@ -607,7 +606,7 @@ function dayOptions(sel){
   return DAYS_AR.map((d,i)=>`<option value="${i}" ${i===Number(sel)?'selected':''}>${d}</option>`).join('');
 }
 
-function renderRules(){minA.value=state.rules.minA;minB.value=state.rules.minB}
+function renderRules(){state.rules.minA=1;state.rules.minB=1}
 
 function openEdit(empId,key){
   const e=state.employees.find(x=>x.id===empId);
@@ -646,7 +645,7 @@ function chooseCoverageAction(s,issue,strategy,lockedRest){
   const day=dayForState(s,issue.date),target=issue.missing,opp=target==='A'?'B':'A',cov=coverage(day);
   const safeSwitch=s.employees
     .filter(e=>day.assignments[e.id]===opp && configForDate(s,e,issue.date).mode==='ROTATE' && !lockedRest.has(`${e.id}|${dateKey(issue.date)}`))
-    .filter(()=>cov[opp]>s.rules[opp==='A'?'minA':'minB']);
+    .filter(()=>cov[opp]>1);
 
   const off=s.employees.filter(e=>day.assignments[e.id]==='OFF'&&!lockedRest.has(`${e.id}|${dateKey(issue.date)}`));
   const offSorted=off.sort((a,b)=>a.name.localeCompare(b.name,'ar'));
@@ -698,7 +697,7 @@ function buildGlobalPlan(strategy,label,desc){
     const k=`${it.emp.id}|${dateKey(it.date)}`;
     if(strategy==='moreRest'){
       const day=dayForState(s,it.date),ass=day.assignments[it.emp.id],cov=coverage(day);
-      const min=ass==='A'?s.rules.minA:s.rules.minB;
+      const min=1;
       if(ass!=='OFF'&&cov[ass]>min&&!lockedRest.has(k)){
         const a={type:'override',empId:it.emp.id,date:it.date,value:'OFF',note:'حل شامل: راحة في اليوم السادس'};
         applyActions(s,[a]);actions.push(a);lockedRest.add(k);continue;
@@ -866,8 +865,6 @@ regenerateBtn.onclick=()=>{
   }
 };
 
-minA.onchange=()=>{state.rules.minA=Math.max(1,Math.min(4,+minA.value||1));rebuild()};
-minB.onchange=()=>{state.rules.minB=Math.max(1,Math.min(4,+minB.value||1));rebuild()};
 
 exportBtn.onclick=exportData;
 importInput.onchange=async e=>{
@@ -878,7 +875,7 @@ importInput.onchange=async e=>{
     state={
       ...clone(defaultState),
       ...d,
-      rules:{...defaultState.rules,...(d.rules||{})},
+      rules:{minA:1,minB:1},
       overrides:d.overrides||{},
       notes:d.notes||{},
       sixthAccepted:d.sixthAccepted||{},
@@ -925,7 +922,7 @@ setTimeout(syncStickyTableHeader,0);
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});
   caches?.keys?.().then(keys=>keys.forEach(k=>caches.delete(k))).catch(()=>{});
-  navigator.serviceWorker.register('./sw.js?v=10').catch(()=>{});
+  navigator.serviceWorker.register('./sw.js?v=11').catch(()=>{});
 }
 
 rebuild();
